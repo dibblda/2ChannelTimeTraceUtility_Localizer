@@ -95,21 +95,8 @@ Menu "Localizer"
 //---------------------------------------------------------------------------------------------------------------------
 	SubMenu "Export to Single Particle Analysis"
 		"Export Particle Data", /Q, ExportScatterDataMenu()
-		//SubtractBackground()
-		StrVarOrDefault("root:ExportedStr","(Subtract Background"), /Q, SubtractBackground()
 		"Compare Background Channel", /Q, CompareBackgroundChannelImport()
-		"Decimalize Imported Data", /Q, Decimalize()
 	End
-
-
-
-
-	SubMenu "Export Track Information"
-		"Export Track Histogram", /Q, ExtractTrackHistogram()
-		"Export Velocity Histograms", /Q, ExtractVelocityHistograms()
-		"Export Mean Square Displacement Histograms", /Q, ExtractMSDHistograms()
-	End
-
 
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -5674,21 +5661,14 @@ End
 Function ExportScatterDataMenu()
 
 	
-
 	variable /G FilteringType
 	// create a window to check which kind of initial filtering to do first
 
 	NewPanel /W=(536,238,686,346)/N=FilterPanel
-	ShowTools/A
 	CheckBox NoFilter,pos={25.00,10.00},size={75.00,16.00}, value= 1, proc=NoFilter, title="No Filtering"
 	CheckBox DuplicateSearch,pos={25.00,35.00},size={98.00,16.00}, value=0,  proc=DupFilter, title="Filter Duplicates"	
 	CheckBox FilterTracks,pos={25.00,60.00},size={103.00,16.00}, value=0,  proc=TrackFilter, title="Track Points Only"
 	Button Execute,pos={50.00,80.00},size={50.00,20.00},proc=ExecuteButton, title="Execute"
-
-
-
-
-	
 
 
 End
@@ -5828,128 +5808,9 @@ End
 
 
 
-// Function to toggle menu item and act on it if exported points are available the above function 
-Function SubtractBackground()
-	String PointsExported = StrVarOrDefault("root:ExportedStr","(Subtract Background")
-	if(CmpStr(PointsExported, "(Subtract Background")==0)
-		String/G root:ExportedStr = "(Subtract Background"
-		//do nothing, there is no data to work with
-	else
-		// execute subtraction routine 
-		SubtractBackgroundPanel()
-
-	endif	
-		
-End
-
-
-Function Decimalize()
-	
-	string posName
-	Prompt posName, "Positions wave:", popup, GetPossiblePositionsWaves()
-	DoPrompt "Select the positions wave", posName
-	if (V_flag == 1)	// cancel
-		return 0
-	endif
-	wave /Z pos = GetPositionsWaveReference(posName)
-	if (WaveExists(pos) == 0)
-		Abort "The selected wave doesn't seem to exist!"
-	endif
-	DecimalizePanel(pos)
-		
-End
-
 
 Function CompareBackgroundChannelImport()
 	CompareBackgroundChannel()
-End
-
-
-Function ExtractTrackHistogram()
-
-	DFREF packagekageFolder = root:Packages:Localizer
-
-	string trackingWaveList = GetPossibleTrackingWaves()
-	if (ItemsInList(trackingWaveList) == 0)
-		Abort "No particle tracks seem to have been calculated"
-	endif
-	
-	string trackingWaveName
-	Prompt trackingWaveName, "Track wave:", popup, trackingWaveList
-	DoPrompt "Select the tracks to filter", trackingWaveName
-	if (V_flag != 0)
-		return 0
-	endif
-	
-	wave /WAVE /Z trackWave = GetTrackingWaveReference(trackingWaveName)
-	if (WaveExists(trackWave) == 0)
-		Abort "Unable to find the requested track"
-	endif
-
-
-
-	Wave HistogramPlot = GetTrackLengthHistogram(trackWave)
-
-	Duplicate /O HistogramPlot LocalPlot
-
-	Make /O/T/N=(numpnts(LocalPlot)) HistogramXAxis
-
-	variable itor
-	for(itor = 0; itor < numpnts(LocalPlot); itor++)
-		HistogramXAxis[itor] = num2str(itor)		
-	endfor
-
-	Display /W=(20,20,520,430)/N=Histogram LocalPlot vs HistogramXAxis
-
-End
-
-
-Function ExtractVelocityHistograms()
-	DFREF packagekageFolder = root:Packages:Localizer
-
-	string trackingWaveList = GetPossibleTrackingWaves()
-	if (ItemsInList(trackingWaveList) == 0)
-		Abort "No particle tracks seem to have been calculated"
-	endif
-	
-	string trackingWaveName
-	Prompt trackingWaveName, "Track wave:", popup, trackingWaveList
-	DoPrompt "Select the tracks to filter", trackingWaveName
-	if (V_flag != 0)
-		return 0
-	endif
-	
-	wave /WAVE /Z trackWave = GetTrackingWaveReference(trackingWaveName)
-	if (WaveExists(trackWave) == 0)
-		Abort "Unable to find the requested track"
-	endif
-
-
-	VelocityHistogramDialog(trackWave)
-End
-
-Function ExtractMSDHistograms()
-	DFREF packagekageFolder = root:Packages:Localizer
-
-	string trackingWaveList = GetPossibleTrackingWaves()
-	if (ItemsInList(trackingWaveList) == 0)
-		Abort "No particle tracks seem to have been calculated"
-	endif
-	
-	string trackingWaveName
-	Prompt trackingWaveName, "Track wave:", popup, trackingWaveList
-	DoPrompt "Select the tracks to filter", trackingWaveName
-	if (V_flag != 0)
-		return 0
-	endif
-	
-	wave /WAVE /Z trackWave = GetTrackingWaveReference(trackingWaveName)
-	if (WaveExists(trackWave) == 0)
-		Abort "Unable to find the requested track"
-	endif
-
-
-	MSDHistogramDialog(trackWave)
 End
 
 

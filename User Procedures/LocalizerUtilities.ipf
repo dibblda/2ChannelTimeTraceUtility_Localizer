@@ -1340,22 +1340,25 @@ Function ExportScatterData(positions, xSize, ySize, pixelSize, FilteringType, im
 			ScatterDataFilterImageEdge(Scatter_X, Scatter_Y, Scatter_Color)
 			Print "There are: " + num2str(DimSize(Scatter_X, 0)) + " unfiltered points localized that are not on the edge of the image"
 			ScatterDataFilter(Scatter_X, Scatter_Y, Scatter_Color, Filter_X, Filter_Y, Filter_Color)	
-			Print "There are: " + num2str(DimSize(Filter_X, 0)) + " filtered points localized (removing duplicates coordinates)" 
+			Print "There are: " + num2str(DimSize(Filter_X, 0)) + " filtered points localized (removing duplicated integer coordinates)" 
 
 		elseif(FilteringType == 2)
-
-			Print "There are: " + num2str(Numpnts(Scatter_X)) + " unfiltered points localized" 
-			ScatterDataFilterImageEdge(Scatter_X, Scatter_Y, Scatter_Color)
-			Print "There are: " + num2str(DimSize(Scatter_X, 0)) + " unfiltered points localized that are not on the edge of the image"
 
 			// create a color wave (doesn't exist for tracks), needed for interface
 			Redimension/N=(numpnts(Scatter_X)) Scatter_Color 
 			Scatter_color = 1
 
+			Print "There are: " + num2str(Numpnts(Scatter_X)) + " unfiltered points localized" 
+			ScatterDataFilterImageEdge(Scatter_X, Scatter_Y, Scatter_Color)
+			Print "There are: " + num2str(DimSize(Scatter_X, 0)) + " unfiltered points localized that are not on the edge of the image"
+			ScatterDataFilter(Scatter_X, Scatter_Y, Scatter_Color, Filter_X, Filter_Y, Filter_Color)	
+			Print "There are: " + num2str(DimSize(Filter_X, 0)) + " filtered points localized (removing duplicated integer coordinates)"
+
+
 			// duplicate Scatter into filter waves, needed for interface
-			Redimension/N=(numpnts(Scatter_X)) Filter_X, Filter_Y 
-			Filter_X = floor(Scatter_X)
-			Filter_Y = floor(Scatter_Y)
+			//Redimension/N=(numpnts(Scatter_X)) Filter_X, Filter_Y 
+			//Filter_X = floor(Scatter_X)
+			//Filter_Y = floor(Scatter_Y)
 
 		endif
 		//--------------------------------------------------------------------------------------------------------------------	
@@ -1771,6 +1774,8 @@ Function PlotWaveSelection()
 	
 	variable /G PointIndex = 0
 	variable /G PointIndexOld = 0
+	variable /G TotalPoints
+	variable /G CurveFitRepeat = 10
 	wave/T WaveNameList = root:WaveNameArray
 	wave/T BaseWaveNameList = root:BaselineWaveNameArray
 	wave/T WaveColorList = root:WaveColorArray
@@ -1781,6 +1786,7 @@ Function PlotWaveSelection()
 	wave/I Y_Wave = root:Filter_Y
 	wave/I Frame_Wave = root:Filter_Color
 
+	TotalPoints = NumPnts(X_Wave) - 1
 
 	// create the very first plot 
 	RetrieveIntensityPlot(X_Wave, Y_Wave, Frame_Wave, PointIndex)
@@ -1860,6 +1866,8 @@ Function PlotWaveSelection()
 	SetVariable CurrentTrace,pos={540.00,70.00},size={120.00,18.00},title="\\F'Arial'\\f01Current Trace",limits={0,(numpnts(X_Wave)) - 1,0},value=root:PointIndex,proc=ChangeCurrentTrace
 	//CheckBox RandomPick,pos={547.00,100.00},size={106.00,16.00},title="Random Plot Pick",value= 0
 
+	ValDisplay TotalTraces,pos={545.00,95.00},size={115.00,18.00},title="\\F'Arial'\\f01Total Traces:",limits={0,0,0},barmisc={0,1000},value=#"TotalPoints"
+
 	//accepting or rejecting plots
 	Button Accept,size={120,20},pos={540,160},title="Accept",proc=AcceptPlot
 	Button Reject,size={120,20},pos={540,190},title="Reject",proc=RejectPlot 
@@ -1884,8 +1892,10 @@ Function PlotWaveSelection()
 	GroupBox TraceFitting,pos={20.00,440.00},size={500.00,50.00},title="Curve Fitting"
 	SetVariable SetMinX,pos={25,460.00},size={100.00,18.00},limits={0,(numpnts($WaveNameList[0])) - 1,0},value=MinCurveFitFrame,title="X Minimum",proc=CurveFitSetMinX
 	SetVariable SetMaxX,pos={130,460.00},size={100.00,18.00},limits={0,(numpnts($WaveNameList[0])) - 1,0},value=MaxCurveFitFrame,title="X Maximum",proc=CurveFitSetMaxX
-	Button ApplyCurveFit,size={120,20},pos={240,460},title="Apply Fit",proc=CurveFitPerform,disable=2
-	Button SaveCurveFit,size={120,20},pos={370,460},title="Accept Fit",proc=CurveFitInclude,disable=2
+	SetVariable NumberRepeat,pos={234.00,461.00},size={150.00,19.00},title="\\F'Arial'\\f01Curve Fit Repeat:",limits={1,inf,1},value=CurveFitRepeat
+
+	Button ApplyCurveFit,size={62,20},pos={388,461},title="Apply Fit",proc=CurveFitPerform,disable=2
+	Button SaveCurveFit,size={62,20},pos={453,461},title="Accept Fit",proc=CurveFitInclude,disable=2
 
 	SetDataFolder root:	
 
@@ -1950,6 +1960,7 @@ Function CurveFitPerform(CtrlName) : ButtonControl
 
 	nvar MinimumX = root:SingleParticleTraceData:MinCurveFitFrame
 	nvar MaximumX = root:SingleParticleTraceData:MaxCurveFitFrame
+	nvar NumberRuns = root:CurveFitRepeat
 	nvar Point = root:PointIndex
 	Wave/T BaseWaveNameList = root:BaselineWaveNameArray
 	Wave CurveFitWave = root:SingleParticleTraceData:CurveFitWave
@@ -1973,10 +1984,11 @@ Function CurveFitPerform(CtrlName) : ButtonControl
 	//---------------------------------------------------------------------------------------------------------------------
 
 	// the answer shows quite a bit of variation per run
-	// lets try to run this function X=10 times, and select the bast fit as the answer
+	// lets try to run this function a user defined number of times, and select the best fit as the answer
 	// store values in a multidimensional wave
 
-	variable NumberRuns = 10
+
+
 	variable NumberParameters = 3
 	//optimization input for the curve fit routine
 	Make /O DummyWave

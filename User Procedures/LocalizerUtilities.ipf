@@ -2,7 +2,10 @@
 #pragma TextEncoding = "UTF-8"		// For details execute DisplayHelpTopic "The TextEncoding Pragma"
 #pragma rtGlobals=3
 
-// Copyright 2008-2015 Peter Dedecker.
+// 
+// Original Files Copyright by 2008-2015 Peter Dedecker.
+// This file modifed by David Joshua Dibble (2019) for: 
+// Garcia IV, A.; Saluga, S. J.; Dibble, D. J.; Saito, N.; Blum S. A. "Single-Molecular-Catalyst Selectivity"
 //
 // This file is part of Localizer.
 //
@@ -3825,6 +3828,397 @@ Function ComparisonGet3by3BeamAverageAll()
 	Endfor
 End
 
+
+
+
+
+
+
+//---------------------------------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------------------------------
+// set up an interface to return the average and standard deviation of surface-bound emitters 
+//---------------------------------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------------------------------
+
+
+Function GetTrackDeviationStatistics(W_TracksWave)
+	wave /WAVE W_TracksWave
+
+
+	// set up a place to store the histogram data and/or clean it up if it already exists (maybe not)
+	if(DataFolderExists("root:TrackStatistics"))
+		SetDataFolder root:TrackStatistics
+		KillWaves/A/Z			
+	else
+		NewDataFolder root:TrackStatistics
+		SetDataFolder root:TrackStatistics		
+	endif
+
+	// make important global variables
+
+	Variable/G TrackAverage = 0
+	Variable/G TrackDeviation = 0
+	Variable/G TrackNormalDeviation = 0.000001
+
+	Variable/G PixelNM = 114.583
+	Variable/G PixelSD = TrackNormalDeviation * PixelNM
+
+	Variable/G NumberOfTracks = DimSize(W_TracksWave, 0)
+
+	// waves to store experiremental and culculated cumulative distribution functions
+	Make /O/N=0 BivariateNormalMeasuredX
+	Make /O/N=0 BivariateNormalMeasuredY
+
+	Make /O/N=0 BivariateNormalCalculatedX
+	Make /O/N=0 BivariateNormalCalculatedY
+
+	// set them using statistics calculation function
+
+	GetEmitterStatistics(W_TracksWave)
+
+	// reset pixel Standard devs after measuring it
+	PixelSD = 	PixelNM * TrackNormalDeviation
+
+	// display the values in a panel
+
+	NewPanel /W=(365,116,769,314) /N=TrackStatistics
+	
+	ValDisplay valdisp0,pos={15.00,10.00},size={343.00,18.00},title="Standard Deviation of Distance From Center (pixels):",limits={0,0,0},barmisc={0,1000},value=#"root:TrackStatistics:TrackNormalDeviation"
+	
+	SetVariable PixelSize,pos={12.00,40.00},size={145.00,19.00},title="Pixel Size (nm):",limits={0.000000001,inf,0},value=root:TrackStatistics:PixelNM,proc=PixelNMSet
+	SetVariable PixelSD,pos={164.00,40.00},size={225.00,19.00},title="Pixel Standard Deviation (nm):",limits={0.000000001,inf,0},value=root:TrackStatistics:PixelSD,proc=PixelSDSet
+	ValDisplay NumberTracks,pos={12.00,69.00},size={150.00,18.00},title="Number Of Tracks:",limits={0,0,0},barmisc={0,1000},value= #"root:TrackStatistics:NumberOfTracks"
+
+	Button ReturnFromStatistics,pos={168.00,90.00},size={50.00,20.00},title="Return",proc=quitStatistics
+
+End
+
+
+	
+//---------------------------------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------------------------------
+// For emitters that are covalently bound to a cover slip, the track can be used to calculate the standard deviation of each localization
+//---------------------------------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------------------------------
+
+Function GetEmitterStatistics(W_TracksWave)
+	wave /WAVE W_TracksWave
+
+	NVAR TAverage = root:TrackStatistics:TrackAverage
+	NVAR TDeviation = root:TrackStatistics:TrackDeviation
+	NVAR TNormDeviation = root:TrackStatistics:TrackNormalDeviation
+
+
+	Wave BivariateNormalMeasuredX = root:TrackStatistics:BivariateNormalMeasuredX
+	Wave BivariateNormalMeasuredY = root:TrackStatistics:BivariateNormalMeasuredY
+
+	Wave BivariateNormalCalculatedX = root:TrackStatistics:BivariateNormalCalculatedX
+	Wave BivariateNormalCalculatedY = root:TrackStatistics:BivariateNormalCalculatedY
+
+
+	Make /O/D/N=0 X_normalized_complete
+	Make /O/D/N=0 Y_normalized_complete
+
+	variable nTracks = DimSize(W_TracksWave, 0)
+	variable itor = 0, xCol, yCol, zCol, average_itor, Average_X, Average_Y
+
+	// get each track, find average postion for each track, subtract from the points
+	// concatenate the track to the end of a growing list, then calculate statistics 
+	for(itor = 0; itor < nTracks; itor++)
+
+		wave CurrentTrack = W_TracksWave[itor]
+
+
+		// get average position, first calculate average x and y, then subtract
+
+		// get index of track coordinates
+		GetColumnsForEmitterPositions(CurrentTrack, xCol, yCol, zCol)
+
+		Average_X = 0
+		Average_Y = 0
+
+		// loop and sum
+		for(average_itor = 0; average_itor < DimSize(CurrentTrack,0); average_itor++)
+			Average_X = CurrentTrack[average_itor][xCol] + Average_X
+			Average_Y = CurrentTrack[average_itor][yCol] + Average_Y
+		endfor
+		// calculate average
+		Average_X = Average_X / DimSize(CurrentTrack,0)
+		Average_Y = Average_Y / DimSize(CurrentTrack,0)
+		//print "Average X: " + num2str(Average_X) + " Average Y: " + num2str(Average_Y)
+		//loop and subtract average, create a wave to store the subtracted average position 
+		Make /O/D/N=(DimSize(CurrentTrack,0)) NormalizedWave_X
+		Make /O/D/N=(DimSize(CurrentTrack,0)) NormalizedWave_Y
+		for(average_itor = 0; average_itor < DimSize(CurrentTrack,0); average_itor++)
+			NormalizedWave_X[average_itor] = CurrentTrack[average_itor][xCol] - Average_X
+			NormalizedWave_Y[average_itor] = CurrentTrack[average_itor][yCol] - Average_Y
+		endfor
+
+		// add Normalized wave to the whole list
+		Concatenate/NP {NormalizedWave_X},X_normalized_complete
+		Concatenate/NP {NormalizedWave_Y},Y_normalized_complete
+
+	endfor	
+
+
+	// ok all the x and y coordinates determined and normalized
+	// now calculate distances from origin and place in a new array
+	Make /O/D/N=(numpnts(X_normalized_complete)) All_Distances
+	for(itor = 0; itor < numpnts(X_normalized_complete); itor++)
+		All_Distances[itor] = sqrt(X_normalized_complete[itor]^2 + Y_normalized_complete[itor]^2)
+	endfor
+	// sort the distances in increasing radius for later calculation of experimental CDF
+	sort All_Distances,All_Distances
+
+
+	// combine all the x and y waves into a single 2-dimensional wave as input to an optimization function
+	Make /O/N=(numpnts(X_normalized_complete),2) XYScatterPair
+	for(itor = 0; itor < numpnts(X_normalized_complete); itor++)
+		XYScatterPair[itor][0] = X_normalized_complete[itor]
+		XYScatterPair[itor][1] = Y_normalized_complete[itor]	
+	endfor
+
+
+	// perform PDF optimization
+	optimize /A=1/m={2,1}/L=0.000001/H=10 MultiVariateNormalFitFunction,XYScatterPair
+	TNormDeviation = V_maxloc
+
+	// plot the distribution function
+
+	// calculate the contour plot
+	Make/D/O/N=1 NormalParameters2D				// from calculated parameters
+	NormalParameters2D[0] = TNormDeviation
+	Make/D/O/N=(100,100) Normal2DWave			// matrix wave for contouring
+	// determine scale from maximum and minimum X,Y values
+	variable MaxRange
+
+	// set maximum to maximum of x or y range
+	if(wavemax(X_normalized_complete) >= wavemax(Y_normalized_complete)) 
+		MaxRange = wavemax(X_normalized_complete)
+	else
+		MaxRange = wavemax(Y_normalized_complete)
+	endif
+	// then set maximum to the absolute value of the minimum if it is greater than the maximum
+	if(abs(wavemax(X_normalized_complete)) >= MaxRange) 
+		MaxRange = abs(wavemax(X_normalized_complete))
+	elseif(abs(wavemax(Y_normalized_complete)) >= MaxRange) 
+		MaxRange = abs(wavemax(Y_normalized_complete))
+	endif
+
+	// calculate the Z values for standard deviations for reference and place in a wave for the contours
+	// itor count starts at 1, 0 point isnt a contour.
+	Make /O/N=10 ContourLineLevels
+	for(itor = 1; itor < 11; itor++)
+		ContourLineLevels[itor - 1] = MultiVariateNormalPlotting(NormalParameters2D,(itor * TNormDeviation),0)
+	Endfor
+
+
+	// set scale to 1.5 x the maximum
+	SetScale/I x -1.5*MaxRange,1.5*MaxRange,Normal2DWave		// nice range of X values for these functions
+	SetScale/I y -1.5*MaxRange,1.5*MaxRange,Normal2DWave		// and Y values
+	Normal2DWave = MultiVariateNormalPlotting(NormalParameters2D,x,y)	// fill f1Wave with values from f1(x,y)
+	Display /W=(5,42,399,396) /N=ContourTrace				// graph window for contour plot
+	AppendMatrixContour Normal2DWave
+	
+
+	ModifyContour Normal2DWave labels=0		// suppress contour labels to reduce clutter
+	// change the contour line levels to a manual setting at the standard deviation intervals
+	// grey color and thickness of 2
+	ModifyContour Normal2DWave manLevels=ContourLineLevels,rgbLines=(30000,30000,30000)
+	ModifyGraph lSize=2
+	// add on the scatter plot
+	AppendToGraph Y_normalized_complete vs X_normalized_complete
+	// make it black points
+	ModifyGraph mode(Y_normalized_complete)=2,rgb(Y_normalized_complete)=(0,0,0),lsize(Y_normalized_complete)=2
+	//put it in the back
+	ReorderTraces _back_, {Y_normalized_complete}
+
+
+	// make the axis pretty
+
+	// graph range
+	SetAxis left (-1.3*MaxRange),(1.3*MaxRange) 
+	SetAxis bottom (-1.3*MaxRange), (1.3*MaxRange)
+	//Set the colors of the different traces
+	// set mirror axis with a thickness of 3, tick inside, major tick length 4, major tick thick 3, no minor tick, no axis standoff, no labels on top and right axis 
+	ModifyGraph mirror=1,axThick=3,tick=2,btLen=4,btThick=3,minor=0,standoff=0
+
+	// make the labels and the sizes	
+	Label bottom "X Position (pixels)"
+	Label left "Y Position (pixels)"
+	// for the whole graph
+	//set font of axis at bold 12 pt 
+	ModifyGraph fstyle=1,fsize=12,font="arial",lblMargin(left)=15, lblMargin(bottom)=5
+
+	
+
+	// prepare the CDF plots
+
+	// first determine how many standard deviations out the data extends (ceiling)
+	// by taking the ceiling of the max radius divided by the standard deviation
+	Variable StandardDevMax = ceil(wavemax(All_Distances) / TNormDeviation)
+
+	// redimension the  calculated and experimental waves to fill up the table
+
+	Redimension /N=(StandardDevMax*20-1) BivariateNormalMeasuredX
+	Redimension /N=(StandardDevMax*20-1) BivariateNormalMeasuredY
+	Redimension /N=(StandardDevMax*20-1) BivariateNormalCalculatedX
+	Redimension /N=(StandardDevMax*20-1) BivariateNormalCalculatedY
+
+	variable Deviation_Itor
+	variable Plot_Itor = 0
+	variable Radii_itor = 0
+	variable Last_Radii_Itor_Index = 0
+	variable Accumulated_Radii = 0
+	variable Total_Radii = numpnts(All_Distances)
+	// itorate over the standard deviations, counting each point that is less than or equal to 
+	// the current value in the previously sorted array
+	// for efficiency, keep track of the previous itoration so that the points are not recounted repeatedly
+	// lets divide the distance by say 20 for a finer-grained curve
+
+	// the loop can suffer from rounding errors, sometimes falling short of the size of the plots
+	// make the plots waves a little shorter and check the index, continuing if it ocassionally is too big
+	for(Deviation_Itor = TNormDeviation / 20; (Deviation_Itor <= TNormDeviation * StandardDevMax); Deviation_Itor += (TNormDeviation / 20))
+
+		
+		
+		if(Plot_Itor > (StandardDevMax*20-2))
+			continue
+		endif
+		Accumulated_Radii = CountInRange(All_Distances,0,Deviation_Itor)
+
+		
+
+		// convert to a fraction of the total and add into the appropriate X/Y waves
+		BivariateNormalMeasuredX[Plot_Itor] = Deviation_Itor
+		BivariateNormalMeasuredY[Plot_Itor] = Accumulated_Radii / Total_Radii
+		// get the predicted CDF for a normal function
+		BivariateNormalCalculatedX[Plot_Itor] = Deviation_Itor
+		BivariateNormalCalculatedY[Plot_Itor] = RadialBivariateNormalCDF(Deviation_Itor, TNormDeviation)
+
+		Plot_Itor += 1
+	endfor	
+
+	// display the CDF data and comparisons
+	Display /W=(55,92,449,446) /N=MeasuredCDF 	BivariateNormalMeasuredY vs BivariateNormalMeasuredX
+	Display /W=(65,102,459,456) /N=CalculatedCDF 	BivariateNormalCalculatedY vs BivariateNormalCalculatedX
+	Display /W=(75,112,469,466) /N=CalculatedCDFvsMeasuredCDF 	BivariateNormalMeasuredY vs BivariateNormalCalculatedY
+
+
+End
+
+
+
+// from https://www.wavemetrics.com/forum/general/countif-equivalent
+Function CountInRange(w, minval, maxval)
+    Wave w
+    Variable minval, maxval // values including or between these values are counted.
+   
+   
+    Extract/FREE/O w, extracted, w >= minval && w <= maxval
+   
+    Variable num= numpnts(extracted)
+   
+    return num
+End
+
+//-----------------------------------------------------------------------------------------------------------------
+// small subsection associated with the radial integration of the bivariate normal function from the center on out
+//-----------------------------------------------------------------------------------------------------------------
+Function RadialBivariateNormalCDF(Radius, Deviation)
+	Variable Radius, Deviation
+
+	Variable IntegrationValue	
+
+	Make /O/N=2 IntegrationPassParameters
+	IntegrationPassParameters[0] = radius
+	IntegrationPassParameters[1] = Deviation
+	// all set up integrate it (with functions defined directly below)
+	// using gaussian quadrature integration algorithm in the X and Y directions (roomberg does not work well here)
+	Integrate2D /OPTS=(4|32) outerLowerLimit=-Radius, outerUpperLimit=Radius, innerLowerFunc=YLowerLimit, innerUpperFunc=YUpperLimit, Integrand=BivariateNormalIntegrand, paramWave=IntegrationPassParameters  	
+
+	
+	return V_Value
+End
+
+// upper Y limit of the Y integration, we are defining a circle to integrate over a radius
+//pwave contains the radius of the current integration
+Function YUpperLimit(pWave, inX)
+	Wave/Z pWave
+	Variable inX
+	// floating point error can create NAN case, account for it
+	if(inX^2 >= pWave[0]^2)
+		return 0	
+	else
+		return sqrt(pWave[0]^2 - inX^2)
+	endif
+End
+// lower Y limit of the Y integration, we are defining a circle to integrate over a radius
+//pwave contains the radius of the current integration
+Function YLowerLimit(pWave, inX)
+	Wave/Z pWave
+	Variable inX
+	// floating point error can create NAN case, account for it
+	if(inX^2 >= pWave[0]^2)
+		return 0	
+	else
+		return -sqrt(pWave[0]^2 - inX^2)
+	endif
+End
+
+// function that acts as a wrapper around the multivariate normal function defined below
+// pWave contains the at [0] radius of integration and [1] the standard deviation of the normal function
+Function BivariateNormalIntegrand(pWave, inX, inY)
+	Wave/Z pWave
+	Variable inX, inY
+
+	return MultiVariateNormal(inX,inY,pWave[1])
+
+End
+
+//-------------------------------------------------------------------------------------
+// the multivariate normal assumes the points are centered around zero so mean is zero
+// the standard deviation for X is assumed to be the same for Y
+//-------------------------------------------------------------------------------------
+Function MultiVariateNormalFitFunction(XYVals,Deviation)
+	Wave XYVals
+	Variable Deviation
+
+	variable Itor
+	Variable Multiple = 0
+
+	for(Itor = 0; Itor < dimsize(XYVals,0); Itor++)
+		Multiple = Multiple + ln(MultiVariateNormal(XYVals[Itor][0], XYVals[Itor][1], Deviation))
+	Endfor
+
+	return Multiple
+End
+
+//-----------------------------------------------------------------------
+// multivariate function defininition for MultiVariateNormalFitFunction
+// http://athenasc.com/Bivariate-Normal.pdf
+//-----------------------------------------------------------------------
+
+Function MultiVariateNormal(X,Y,Deviation)
+	Variable X, Y, Deviation 
+
+	Variable Constant = 1 / (2 * pi * (Deviation)^2)
+	Variable Exponent = -((X^2 / (2 * Deviation^2))+(Y^2 / (2 * Deviation^2)))
+	return Constant * exp(Exponent)
+
+End
+
+
+
+Function MultiVariateNormalPlotting(w, xx, yy)
+	Wave W
+	Variable xx,yy
+
+	Variable Constant = 1 / (2 * pi * (w[0])^2)
+	Variable Exponent = -((xx^2 / (2 * w[0]^2))+(yy^2 / (2 * w[0]^2)))
+	return Constant * exp(Exponent)
+End
+	
 
 //-----------------------------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------------------------

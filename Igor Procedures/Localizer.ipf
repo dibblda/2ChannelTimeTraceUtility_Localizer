@@ -1,8 +1,10 @@
 #pragma TextEncoding = "UTF-8"		// For details execute DisplayHelpTopic "The TextEncoding Pragma"
 #pragma rtGlobals=3
 
-// Copyright 2008-2015 Peter Dedecker.
-//
+// 
+// Original Files Copyright by 2008-2015 Peter Dedecker.
+// This file modifed by David Joshua Dibble (2019) for: 
+// Garcia IV, A.; Saluga, S. J.; Dibble, D. J.; Saito, N.; Blum S. A. "Single-Molecular-Catalyst Selectivity"//
 // This file is part of Localizer.
 //
 // Localizer is free software: you can redistribute it and/or modify
@@ -98,6 +100,9 @@ Menu "Localizer"
 		"Compare Background Channel", /Q, CompareBackgroundChannelImport()
 	End
 
+	SubMenu "Track Information"
+		"Surface-Bound Emitter Statistics", /Q, DetermineTrackStatistics()
+	End
 
 //---------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------
@@ -5812,6 +5817,90 @@ End
 Function CompareBackgroundChannelImport()
 	CompareBackgroundChannel()
 End
+
+
+
+
+//----------------------------------------------------------
+//----------------------------------------------------------
+// function to calculate statistics on single particles
+// primarily useful when particles are bound on a surface
+//----------------------------------------------------------
+//----------------------------------------------------------
+Function DetermineTrackStatistics()
+	// get track wave and open if available
+	string trackingWaveList = GetPossibleTrackingWaves()
+	if (ItemsInList(trackingWaveList) == 0)
+		Abort "No particle tracks seem to have been calculated"
+	endif
+	
+	string trackingWaveName
+	Prompt trackingWaveName, "Track wave:", popup, trackingWaveList
+	DoPrompt "Select the tracks to filter", trackingWaveName
+	if (V_flag != 0)
+		return 0
+	endif
+	
+	wave /WAVE /Z trackWave = GetTrackingWaveReference(trackingWaveName)
+	if (WaveExists(trackWave) == 0)
+		Abort "Unable to find the requested track"
+	endif
+
+	// available, get statistics and display
+	 GetTrackDeviationStatistics(trackWave)
+
+End
+
+Function PixelNMSet(sva) : SetVariableControl
+	STRUCT WMSetVariableAction &sva
+
+	nvar PixNM = root:TrackStatistics:PixelNM
+	nvar PixSD = root:TrackStatistics:PixelSD
+	nvar TNorm = root:TrackStatistics:TrackNormalDeviation
+	switch( sva.eventCode )
+		case 1: // mouse up
+		case 2: // Enter key
+		case 3: // Live update
+			PixNM = sva.dval
+			PixSD = PixNM * TNorm
+			break
+	endswitch
+
+	return 0
+End
+
+Function PixelSDSet(sva) : SetVariableControl
+	STRUCT WMSetVariableAction &sva
+
+	nvar PixNM = root:TrackStatistics:PixelNM
+	nvar PixSD = root:TrackStatistics:PixelSD
+	nvar TNorm = root:TrackStatistics:TrackNormalDeviation
+	switch( sva.eventCode )
+		case 1: // mouse up
+		case 2: // Enter key
+		case 3: // Live update
+			PixSD = sva.dval
+			PixNM = PixSD / TNorm
+			break
+	endswitch
+
+	return 0
+End
+
+
+
+
+
+
+
+Function quitStatistics(CtrlName) : ButtonControl
+	String CtrlName
+	KillWindow/Z TrackStatistics
+End
+
+
+
+
 
 
 //------------------------------------------------------------------------------------------------------------------------------------------
